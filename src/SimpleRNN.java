@@ -38,7 +38,7 @@ import java.util.Random;
 
 public class SimpleRNN {
     private static final int HIDDEN_SIZE = 100; // 隱藏層大小
-    private static final int SEQ_LENGTH = 15; // 序列長度
+    private static final int SEQ_LENGTH = 25; // 序列長度
     private static final double LEARNING_RATE = 0.01; // 學習率
 
     private double[][] wxh; // 輸入層到隱藏層的權重矩陣
@@ -202,7 +202,12 @@ public class SimpleRNN {
             dh = add(dh, dhnext);
 
             double[] dhraw = multiply(dh, dReLU(forwardResult.h[t]));
-
+            /**
+             * dhraw 是經過 tanh 激活函数的導數修正後的誤差訊號。
+             * 在反向傳播中，隱藏層的誤差 dh 需要乘以 tanh 函数的導數tanh(h)，
+             * 以反映激活函数對誤差的影響，從而得到對隱藏層输入的真實梯度 dhraw。
+             * 這個 dhraw 用於計算輸入層到隱藏層權重(wxh)、隱藏層到隱藏層權重(whh)和隱藏層偏置(bh)的梯度。
+             */
             // 計算輸入層和隱藏層梯度
             grad.dwxh = add(grad.dwxh, outer(dhraw, idxToOneHot(inputs[t])));
             // 使用前一時間步的隱藏態 h[t-1]
@@ -210,6 +215,7 @@ public class SimpleRNN {
             grad.dbh = add(grad.dbh, dhraw);
 
             dhnext = matrixVectorMultiply(transpose(whh), dhraw);
+            //System.out.println("t=" + t + ", dhnext norm=" + norm(dhnext));
         }
         return grad;
     }
@@ -383,18 +389,6 @@ public class SimpleRNN {
         double[] oneHot = new double[vocabSize];
         oneHot[idxes] = 1.0;
         return oneHot;
-    }
-
-    private int sampleFromProbabilities(double[] probabilities) {
-        double randomValue = Math.random();
-        double cumulativeProbability = 0.0;
-        for (int i = 0; i < probabilities.length; i++) {
-          cumulativeProbability += probabilities[i];
-          if (randomValue <= cumulativeProbability) {
-              return i;
-          }
-        }
-        return probabilities.length - 1;
     }
 
     private int argmax(double[] array) {
