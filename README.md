@@ -1,22 +1,23 @@
-# SimpleRNN
+# SimpleIRNN
 
-A minimal character-level Recurrent Neural Network (RNN) implementation in Java.
+A minimal character-level Recurrent Neural Network that is composed of ReLUs and initialized with the identity matrix (IRNN) implementation in Java.
 
 ## Overview
 
-This project implements a simple RNN from scratch to learn character sequences and generate text. It demonstrates the core concepts of RNNs including forward propagation, backpropagation through time (BPTT), and parameter updates using gradient descent.
+This project implements a simple IRNN from scratch to learn character sequences and generate text. It demonstrates the core concepts of IRNN.
 
 ## Features
 
 - Character-level modeling with a vocabulary built from input text.
-- Single hidden layer with tanh activation.
+- Single hidden layer with ReLu activation.
+- Initialized hidden layer to hidden layer weight matrix with the identity matrix.
 - Training with cross-entropy loss and smooth loss tracking.
 - Forward and backward passes implemented manually without external ML libraries.
 - Sampling method to generate text from learned probabilities.
 
 ## Usage
 
-- Initialize the RNN with training data (a string).
+- Initialize the IRNN with training data (a string).
 - Call the `train` method with the number of iterations to train the model.
 - Use the trained model to generate text by sampling from output probabilities.
 
@@ -30,11 +31,14 @@ This project implements a simple RNN from scratch to learn character sequences a
 
 ## Notes
 
-- Sequence length is fixed to 1 for simplicity.
+- Sequence length is fixed to 15 for simplicity.
 - The model uses one-hot encoding for input characters.
-- Random initialization of weights with small Gaussian noise.
-- Designed for educational purposes to understand RNN internals.
+- Random initialization of weights with small Gaussian noise but not hidden-to-hidden layer weights.
+- Designed for educational purposes to understand IRNN internals.
 
 ## License
 
 MIT License
+=======
+# min-char-irnn
+A Java reference implementation for IRNN.
