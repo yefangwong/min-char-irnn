@@ -30,14 +30,9 @@ This project implements a simple IRNN from scratch to learn character sequences 
 - Parameter updates use gradient descent with a fixed learning rate.
 
 ## Notes
-<<<<<<< HEAD
-
-- Sequence length is fixed to 15 for simplicity.
-=======
 *  ~~Sequence length is fixed to 1 for simplicity.~~ 
 *  **Sequence length (SEQ_LENGTH) is now set to 25, aligning with the original Python implementation to facilitate the learning of intermediate temporal dependencies.** 
 *  The recurrent logic in the `forward` pass has been corrected to ensure proper propagation of the hidden state across time steps.
->>>>>>> 5b6837adfe4a884c507f3f29ad6c370938e0d864
 - The model uses one-hot encoding for input characters.
 - Random initialization of weights with small Gaussian noise but not hidden-to-hidden layer weights.
 - Designed for educational purposes to understand IRNN internals.
