@@ -30,6 +30,8 @@
  * BSD license.
  */
 
+import math.MathUtils;
+
 import java.io.*;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -39,7 +41,11 @@ import java.util.Random;
 public class SimpleRNN {
     private static final int HIDDEN_SIZE = 100; // 隱藏層大小
     private static final int SEQ_LENGTH = 25; // 序列長度
+<<<<<<< HEAD
     private static final double LEARNING_RATE = 0.01; // 學習率
+=======
+    private static final double LEARNING_RATE = 0.001; // 學習率
+>>>>>>> 2e68ae770809b25b9212bcf71125764c2540d49c
 
     private double[][] wxh; // 輸入層到隱藏層的權重矩陣
     private double[][] whh; // 隱藏層到隱藏層的權重矩陣
@@ -115,28 +121,41 @@ public class SimpleRNN {
         int p = 0;
         double smoothLoss = -Math.log(1.0 / vocabSize) * SEQ_LENGTH;
         double[] hPrev = new double[HIDDEN_SIZE]; // 重置 RNN 記憶體
+        
+        // 梯度監控相關變數
+        double maxGradientNorm = 0.0;
+        double avgGradientNorm = 0.0;
+        int gradientExplodeCount = 0;
+        double clipNorm = 5.0; // 梯度爆炸閾值
 
         System.out.println("initial smoothLoss:" + smoothLoss);
         while(n <= iterations) {
             //System.out.println("iter:" + n + " starts --------------------------------");
-            if ((p + SEQ_LENGTH >= data.length() || n == 0)) {
+            if ((p + SEQ_LENGTH + 1 >= data.length() || n == 0)) {
                 hPrev = new double[HIDDEN_SIZE]; // reset RNN memory
                 p = 0; // go from start of data
             }
 
-            int[] inputs = new int[SEQ_LENGTH];
-            int[] targets = new int[SEQ_LENGTH];
-            for (int i = 0; i < SEQ_LENGTH; i++) {
-                // 檢查目標字符的索引 (p + i + 1) 是否超出總資料長度
-                // 如果下一個字符 (p + i + 1) 不存在，則代表資料切片結束，必須跳出
-                if (p + i + 1 >= data.length()) {
+            final int seqLen = SEQ_LENGTH;
+            int[] inputs = new int[seqLen];
+            int[] targets = new int[seqLen];
+
+            int validLen = 0;
+            for (int t = 0; t < seqLen; t++) {
+                int inPos = p + t;
+                int tgtPos = p + t + 1;
+
+                // 檢查目標字符的索引 tgtPos 是否超出總資料長度
+                // 如果下一個字符 tgtPos 不存在，則代表資料切片結束，必須跳出，允許短序列
+                if (tgtPos >= data.length()) {
                     break;
                 }
 
-                // 讀取當前輸入字符（p + i）
-                inputs[i] = charToIdx.get(data.charAt(p + i));
-                // 讀取下一個目標字符（p + i + 1）
-                targets[i] = charToIdx.get(data.charAt(p + i + 1));
+                // 讀取當前輸入字符 inPos
+                inputs[t] = charToIdx.get(data.charAt(inPos));
+                // 讀取下一個目標字符 tgtPos
+                targets[t] = charToIdx.get(data.charAt(tgtPos));
+                validLen++;
             }
             double loss = 0;
 
@@ -145,37 +164,81 @@ public class SimpleRNN {
             //System.out.println("targets:" + Arrays.toString(targets));
 
             // 前向傳播 (得到預測機率)
-            ForwardResult result = forward(inputs, hPrev);
+            ForwardResult result = forward(inputs, hPrev, validLen);
+
             // 取這一輪的最後一個時間步做為下一輪的初始 hPrev
             hPrev = result.h[result.h.length - 1];
 
             // 計算 loss (Cross Entropy)
-            for (int t = 0; t < SEQ_LENGTH; t++) {
+            for (int t = 0; t < validLen; t++) {
                 loss += computeLoss(result.y[t], targets[t]);
             }
 
-            // 更新 smoothLoss
-            smoothLoss = smoothLoss * 0.99 + loss * 0.001;
+            // 平滑系數調大，曲線更穩
+            final double smoothFactor = 0.999;
+            final double lossFactor   = 0.001;
 
-            if (n % 100 == 0)
-                System.out.println("Iteration: " + n + ", Loss: " + loss + ", Smooth Loss: " + smoothLoss);
+            // 更新 smoothLoss
+            smoothLoss = smoothLoss * smoothFactor + loss * lossFactor;
 
             // 反向傳播
-            BackwardResult grad = backward(inputs, targets, result);
+            BackwardResult grad = backward(inputs, targets, validLen, result);
+
+            // 計算梯度範數並監控梯度爆炸
+            double gradientNorm = grad.calculateGradientNorm();
+            avgGradientNorm = avgGradientNorm * smoothFactor + gradientNorm * (1 - smoothFactor);
+
+            // 全局梯度缩放 & 檢測梯度爆炸
+            if (gradientNorm > clipNorm) {
+                double scale = clipNorm / gradientNorm;
+                grad.scaleGradients(scale);
+                System.out.println("Global gradient scaled at iteration " + n +
+                        ", original norm: " + gradientNorm +
+                        ", scaled factor: " + scale);
+                gradientExplodeCount++;
+                System.out.println("Warning: Gradient explosion detected at iteration " + n +
+                        ", gradient norm: " + gradientNorm);
+            }
+
+            maxGradientNorm = Math.max(maxGradientNorm, gradientNorm);
+
+            // 在更新參數前進行梯度裁剪
+            double afterClipNorm = grad.calculateGradientNorm();
+
+            // 如果梯度被裁剪，輸出裁剪前後的梯度範數
+            if (Math.abs(gradientNorm - afterClipNorm) > 1e-6) {
+                System.out.println("Gradient clipped at iteration " + n +
+                                  ", before: " + gradientNorm  +
+                                  ", after: " + afterClipNorm);
+            }
+
+            if (n % 100 == 0) {
+                System.out.println("Iteration: " + n +
+                        ", Loss: " + loss +
+                        ", Smooth Loss: " + smoothLoss +
+                        ", Gradient Norm: " + afterClipNorm +
+                        ", Avg Gradient Norm: " + avgGradientNorm);
+            }
 
             // 更新參數
             updateParameters(grad);
 
-            p += 1; // move data pointer
+            p += validLen; // move data pointer
             n++; // iteration counter
         }
 
         long endTime = System.currentTimeMillis(); // 紀錄結束時間 (毫秒)
         double elapsedTime = (endTime - startTime) / 1000.0; // 轉換為秒
+        double gradientExplodeRate = ((double) gradientExplodeCount / iterations) * 100;
+
         System.out.println("Training time: " + elapsedTime + " seconds");
+        System.out.println("Gradient statistics - Max Norm: " + maxGradientNorm +
+                ", Avg Norm: " + avgGradientNorm +
+                ", Explosion Count: " + gradientExplodeCount +
+                ", Explosion Rate:" + gradientExplodeRate);
     }
 
-    private BackwardResult backward(int[] inputs, int[] targets, ForwardResult forwardResult) {
+    private BackwardResult backward(int[] inputs, int[] targets, int validLen, ForwardResult forwardResult) {
         int T = inputs.length;
         int H = HIDDEN_SIZE;
         int V = vocabSize;
@@ -189,7 +252,10 @@ public class SimpleRNN {
 
         double[] dhnext = new double[H];
 
-        for (int t = T - 1; t >= 0; t--) {
+        // 和 forward 對齊：只對有效步數做反傳，避免讀到未計算的 forwardResult.*[t]
+        int steps = MathUtils.clampInt(validLen, 0, inputs.length);
+
+        for (int t = steps - 1; t >= 0; t--) {
             double[] dy = Arrays.copyOf(forwardResult.y[t], V);
             dy[targets[t]] -= 1.0;
 
@@ -201,6 +267,12 @@ public class SimpleRNN {
             double[] dh = matrixVectorMultiply(transpose(why), dy);
             dh = add(dh, dhnext);
 
+            /**
+             * dhraw 是經過 tanh 激活函数的導數修正後的誤差訊號。
+             * 在反向傳播中，隱藏層的誤差 dh 需要乘以 tanh 函数的導數tanh(h)，
+             * 以反映激活函数對誤差的影響，從而得到對隱藏層输入的真實梯度 dhraw。
+             * 這個 dhraw 用於計算輸入層到隱藏層權重(wxh)、隱藏層到隱藏層權重(whh)和隱藏層偏置(bh)的梯度。
+             */
             double[] dhraw = multiply(dh, dReLU(forwardResult.h[t]));
 
             // 計算輸入層和隱藏層梯度
@@ -210,8 +282,34 @@ public class SimpleRNN {
             grad.dbh = add(grad.dbh, dhraw);
 
             dhnext = matrixVectorMultiply(transpose(whh), dhraw);
+            //System.out.println("t=" + t + ", dhnext norm=" + l2Norm(dhnext));
+
+            // 增加局部梯度裁剪 (新增以下方法調用)
+            dhraw = clipGradient(dhraw, 1.0);  // 新增局部裁剪
+            dhnext = clipGradient(dhnext, 1.0); // 限制單個神經元梯度
+
+            // 添加梯度監控 (新增以下三行)
+            double gradNorm = Math.sqrt(Arrays.stream(dhnext).map(x -> x*x).sum());
+            double maxGrad = Arrays.stream(dhnext).max().orElse(0);
+            double minGrad = Arrays.stream(dhnext).min().orElse(0);
+            //System.out.printf("t=%d  dhnext norm=%.6f  max=%.6f  min=%.6f%n", t, gradNorm, maxGrad, minGrad);
         }
         return grad;
+    }
+
+    private double[] clipGradient(double[] grad, double threshold) {
+        double norm = Math.sqrt(Arrays.stream(grad).map(x->x*x).sum());
+        return norm > threshold ?
+                Arrays.stream(grad).map(x -> x*threshold/norm).toArray() :
+                grad;
+    }
+
+    private double l2Norm(double[] v) {
+        double sum = 0.0;
+        for (double x : v) {
+            sum += x * x;
+        }
+        return Math.sqrt(sum);
     }
 
     private double[] ReLU(double[] values) {
@@ -307,7 +405,7 @@ public class SimpleRNN {
     }
 
     // 前項傳播方法
-    private ForwardResult forward(int[] inputs, double[] hPrev) {
+    private ForwardResult forward(int[] inputs, double[] hPrev, int validLen) {
         int T = inputs.length;
         int H = whh.length;
         int V = vocabSize;
@@ -320,14 +418,14 @@ public class SimpleRNN {
 
         double[] h_t_minus_1 = hPrev;
 
-        for (int t = 0; t < inputs.length; t++) {
+        int steps = MathUtils.clampInt(validLen, 0, inputs.length);
+        for (int t = 0; t < steps; t++) {
             // 儲存本步驟的前一隱藏態 h[t-1]
             result.hPrev[t] = Arrays.copyOf(h_t_minus_1, h_t_minus_1.length);
 
             // 計算隱藏層狀態 ht = ReLU(xt * Wxh + ht-1 * Whh + hb)
             result.h[t] = ReLU(add(matrixVectorMultiply(this.wxh, idxToOneHot(inputs[t])),
                         add(matrixVectorMultiply(this.whh, h_t_minus_1), this.bh)));
-
             // 更新前一狀態
             h_t_minus_1 = result.h[t];
 
@@ -385,18 +483,6 @@ public class SimpleRNN {
         return oneHot;
     }
 
-    private int sampleFromProbabilities(double[] probabilities) {
-        double randomValue = Math.random();
-        double cumulativeProbability = 0.0;
-        for (int i = 0; i < probabilities.length; i++) {
-          cumulativeProbability += probabilities[i];
-          if (randomValue <= cumulativeProbability) {
-              return i;
-          }
-        }
-        return probabilities.length - 1;
-    }
-
     private int argmax(double[] array) {
         int maxIndex = 0;
         double max = array[0];
@@ -445,7 +531,7 @@ public class SimpleRNN {
 
         int currentCharIdx = charToIdx.get(seedChar);
         for (int i = 0; i < length; i++) {
-            ForwardResult result = forward(new int[]{currentCharIdx}, h);
+            ForwardResult result = forward(new int[]{currentCharIdx}, h, 1);
 
             if (result == null) {
                 System.out.println("Error: Forward propagation failed");
@@ -479,6 +565,7 @@ public class SimpleRNN {
     }
 
     private double[] softmax(double[] x) {
+<<<<<<< HEAD
         double[] shiftedX = new double[x.length];
         double max = x[0];
         for (int i = 1; i < x.length; i++) {
@@ -497,6 +584,19 @@ public class SimpleRNN {
         }
         for (int i = 0; i < shiftedX.length; i++) {
             result[i] = Math.exp(shiftedX[i]) / sum;
+=======
+        double max = x[0];
+        for (double value : x) {
+            if (value > max) max = value;
+        }
+        double[] result = new double[x.length];
+        double sum = 0.0;
+        for (double shiftValue : x) {
+            sum += Math.exp(shiftValue - max);
+        }
+        for (int i = 0; i < x.length; i++) {
+            result[i] = Math.exp(x[i] - max) / sum;
+>>>>>>> 2e68ae770809b25b9212bcf71125764c2540d49c
         }
         return result;
     }
@@ -511,7 +611,7 @@ public class SimpleRNN {
             int iter = 2600;
             rnn.train(data, iter);
             //rnn.generate(14, '查');
-            rnn.generate(6, '鮭');
+            rnn.generate(3, '生');
             rnn.saveModel(String.format("rnn_model_%d.dat", iter));
         } else if (args[0].contains("--inference")) {
             rnn = new SimpleRNN("");
