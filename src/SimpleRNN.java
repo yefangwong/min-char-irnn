@@ -38,7 +38,7 @@ import java.util.Random;
 
 public class SimpleRNN {
     private static final int HIDDEN_SIZE = 100; // 隱藏層大小
-    private static final int SEQ_LENGTH = 15; // 序列長度
+    private static final int SEQ_LENGTH = 25; // 序列長度
     private static final double LEARNING_RATE = 0.01; // 學習率
 
     private double[][] wxh; // 輸入層到隱藏層的權重矩陣
@@ -479,13 +479,24 @@ public class SimpleRNN {
     }
 
     private double[] softmax(double[] x) {
-        double[] result = new double[x.length];
-        double sum = 0.0;
-        for (double value : x) {
-            sum += Math.exp(value);
+        double[] shiftedX = new double[x.length];
+        double max = x[0];
+        for (int i = 1; i < x.length; i++) {
+            if (x[i] > max) {
+                max = x[i];
+            }
         }
         for (int i = 0; i < x.length; i++) {
-            result[i] = Math.exp(x[i]) / sum;
+            shiftedX[i] = x[i] - max;
+        }
+
+        double[] result = new double[shiftedX.length];
+        double sum = 0.0;
+        for (double value : shiftedX) {
+            sum += Math.exp(value);
+        }
+        for (int i = 0; i < shiftedX.length; i++) {
+            result[i] = Math.exp(shiftedX[i]) / sum;
         }
         return result;
     }
